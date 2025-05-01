@@ -35,19 +35,22 @@ const BASE_SPEED = .01;
 const LOG_SCALE_FACTOR = .95;
 let selectedColorSet;
 let MARGIN;
+let isColorCycling = false;
+let baseHue = 0;
+const COLOR_CYCLE_SPEED = .75;
 
 const colorSets = [
     [
         [255, 166, 0],    // Red
-        [255, 250, 0],  // Light Green
-        [190, 255, 0],   // Light Blue
-        [125, 255, 0],   // Yellow
-        [55, 255, 0],   // Pink
-        [0, 255, 65],    // Teal
-        [0, 255, 160],     // Deep Purple
-        [0, 255, 225],     // Deep Pink
-        [0, 200, 255],     // Bright Red
-        [0, 160, 255]      // Orange
+        [255, 250, 0],    // Light Green
+        [190, 255, 0],    // Light Blue
+        [125, 255, 0],    // Yellow
+        [55, 255, 0],     // Pink
+        [0, 255, 65],     // Teal
+        [0, 255, 160],    // Deep Purple
+        [0, 255, 225],    // Deep Pink
+        [0, 200, 255],    // Bright Red
+        [0, 160, 255]     // Orange
     ]
 ];
 
@@ -102,7 +105,7 @@ function setup() {
     }
 
     generateStreams();
-    selectedColorSet = random(colorSets);
+    selectedColorSet = colorSets[0];
 }
 
 function windowResized() {
@@ -142,10 +145,15 @@ function isOverAnyImageCached(point) {
 function draw() {
     if (!selectedColorSet) return;
     
-    // background(selectedColorSet[6] || [0, 0, 0]);
     background(0, 0, 0);
     pointImageOverlapCache = {};
-    drawTransparentCircle();
+    // drawTransparentCircle();
+
+    if (isColorCycling) {
+        baseHue = (baseHue + COLOR_CYCLE_SPEED) % 360;
+        selectedColorSet = generateColorSet();
+        updateStreamColors();
+    }
 
     adjustStreams();
 
@@ -163,7 +171,7 @@ function adjustStreams() {
     for (let j = 0; j < 10; j++) {
         while (streamGroups[j].length < desiredStreamCounts[j]) {
             let samplePoint = streamGroups[j].length > 0 ? random(random(streamGroups[j]).points) : null;
-            streamGroups[j].push(new Stream(selectedColorSet[j] || [0, 0, 0], j, samplePoint));
+            streamGroups[j].push(new Stream(selectedColorSet[j], j, samplePoint));
         }
 
         while (streamGroups[j].length > desiredStreamCounts[j]) {
@@ -201,11 +209,7 @@ function isInsideCircle(point) {
 }
 
 function mousePressed() {
-    for (let streams of streamGroups) {
-        for (let s of streams) {
-            s.changeMode();
-        }
-    }
+    isColorCycling = !isColorCycling;
 }
 
 function keyPressed() {
@@ -217,9 +221,9 @@ function keyPressed() {
 }
 
 function updateStreamColors() {
-    for (let j = 0; j < 4; j++) {
+    for (let j = 0; j < streamGroups.length; j++) {
         for (let stream of streamGroups[j]) {
-            stream.color = selectedColorSet[j] || [0, 0, 0];
+            stream.color = selectedColorSet[j];
         }
     }
 }
@@ -331,7 +335,7 @@ class Stream {
             }
         }
 
-        let angleVariation = map(noise(this.noiseOffset), 0, .1, -PI, PI);
+        let angleVariation = map(noise(this.noiseOffset), 0, .25, -PI, PI);
         this.currentAngle += angleVariation;
 
         newPoint = p5.Vector.fromAngle(this.currentAngle).mult(speed).add(lastPoint);
@@ -344,7 +348,7 @@ class Stream {
         this.stayWithinBounds(newPoint);
 
         this.points.push(newPoint);
-        this.noiseOffset += 0.005;
+        this.noiseOffset += 0.001;
 
         if (this.points.length > 100) {
             this.points.shift();
@@ -382,7 +386,11 @@ class Stream {
 
     display() {
         noFill();
-        stroke(this.color[0], this.color[1], this.color[2], this.alpha);
+        let alphaValue = this.alpha;
+        if (!this.isOverAssignedImage(this.points[this.points.length - 1])) {
+            alphaValue = this.alpha * 0.3; // Reduce brightness to 30% when not over assigned image
+        }
+        stroke(this.color[0], this.color[1], this.color[2], alphaValue);
         strokeWeight(.5);
         beginShape();
         for (let pt of this.points) {
@@ -390,6 +398,79 @@ class Stream {
         }
         endShape();
     }
+}
+
+function rgbToHsb(r, g, b) {
+    r = r / 255;
+    g = g / 255;
+    b = b / 255;
+    
+    let max = Math.max(r, g, b);
+    let min = Math.min(r, g, b);
+    let d = max - min;
+    
+    let h;
+    if (max === min) {
+        h = 0;
+    } else if (max === r) {
+        h = (60 * ((g - b) / d) + 360) % 360;
+    } else if (max === g) {
+        h = (60 * ((b - r) / d) + 120) % 360;
+    } else {
+        h = (60 * ((r - g) / d) + 240) % 360;
+    }
+    
+    let s = max === 0 ? 0 : d / max;
+    let v = max;
+    
+    return [h, s * 100, v * 100];
+}
+
+function generateColorSet() {
+    if (!isColorCycling) {
+        return colorSets[0];
+    }
+    
+    let colors = [];
+    for (let i = 0; i < 10; i++) {
+        let originalColor = colorSets[0][i];
+        let [h, s, v] = rgbToHsb(originalColor[0], originalColor[1], originalColor[2]);
+        let newHue = (h + baseHue) % 360;
+        colors.push(hsbToRgb(newHue, s, v));
+    }
+    return colors;
+}
+
+function hsbToRgb(h, s, v) {
+    h = h % 360;
+    s = s / 100;
+    v = v / 100;
+    
+    let c = v * s;
+    let x = c * (1 - Math.abs((h / 60) % 2 - 1));
+    let m = v - c;
+    
+    let r, g, b;
+    
+    if (h < 60) {
+        [r, g, b] = [c, x, 0];
+    } else if (h < 120) {
+        [r, g, b] = [x, c, 0];
+    } else if (h < 180) {
+        [r, g, b] = [0, c, x];
+    } else if (h < 240) {
+        [r, g, b] = [0, x, c];
+    } else if (h < 300) {
+        [r, g, b] = [x, 0, c];
+    } else {
+        [r, g, b] = [c, 0, x];
+    }
+    
+    return [
+        Math.round((r + m) * 255),
+        Math.round((g + m) * 255),
+        Math.round((b + m) * 255)
+    ];
 }
     </script>
 </body>
