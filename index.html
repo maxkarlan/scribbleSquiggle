@@ -23,7 +23,7 @@
     <script>
 let images = [null, null, null, null, null, null, null, null, null, null];
 const transparencyThreshold = 128;
-const numOfStreams = 3000;
+const numOfStreams = 4000;
 let imgCenter; 
 let pointImageOverlapCache = {};  
 let circleDiameter;
@@ -335,7 +335,7 @@ class Stream {
             }
         }
 
-        let angleVariation = map(noise(this.noiseOffset), 0, .25, -PI, PI);
+        let angleVariation = map(noise(this.noiseOffset), 0, .025, -PI, PI);
         this.currentAngle += angleVariation;
 
         newPoint = p5.Vector.fromAngle(this.currentAngle).mult(speed).add(lastPoint);
